@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ namespace StudentLeaveSystem.Controllers
             _context = context;
         }
 
+        [Authorize(Roles = "管理员")]
         [HttpPost]
         public async Task<IActionResult> CreateTeacher([FromBody] Teacher teacher)
         {
@@ -79,9 +81,34 @@ namespace StudentLeaveSystem.Controllers
                 return NotFound();
             }
 
+            // 更新姓名
+            if (!string.IsNullOrEmpty(update.Tname))
+            {
+                teacher.Tname = update.Tname;
+            }
+
+            // 更新电话
             if (!string.IsNullOrEmpty(update.Tphone))
             {
                 teacher.Tphone = update.Tphone;
+            }
+
+            // 如果需要修改密码
+            if (!string.IsNullOrEmpty(update.NewPassword))
+            {
+                // 验证旧密码
+                if (string.IsNullOrEmpty(update.OldPassword))
+                {
+                    return BadRequest(new { message = "请输入旧密码" });
+                }
+
+                if (!BCrypt.Net.BCrypt.Verify(update.OldPassword, teacher.Tpassword))
+                {
+                    return BadRequest(new { message = "旧密码不正确" });
+                }
+
+                // 更新密码
+                teacher.Tpassword = BCrypt.Net.BCrypt.HashPassword(update.NewPassword);
             }
 
             await _context.SaveChangesAsync();
@@ -143,6 +170,9 @@ namespace StudentLeaveSystem.Controllers
         public class TeacherProfileUpdate
         {
             public string? Tphone { get; set; }
+            public string? Tname { get; set; }
+            public string? OldPassword { get; set; }
+            public string? NewPassword { get; set; }
         }
 
         public class PasswordUpdate

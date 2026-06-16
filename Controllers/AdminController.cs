@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ namespace StudentLeaveSystem.Controllers
 {
     [Route("api/admin")]
     [ApiController]
+    [Authorize(Roles = "管理员")]
     public class AdminController : ControllerBase
     {
         private readonly AppDbContext _context;

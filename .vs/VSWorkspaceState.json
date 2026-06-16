@@ -1,0 +1,15 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\Controllers",
+    "\\Data",
+    "\\Models",
+    "\\obj",
+    "\\obj\\Debug",
+    "\\obj\\Release",
+    "\\obj\\Release\\net8.0",
+    "\\Properties"
+  ],
+  "SelectedNode": "\\Program.cs",
+  "PreviewInSolutionExplorer": false
+}

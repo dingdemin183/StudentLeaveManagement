@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ namespace StudentLeaveSystem.Controllers
             _context = context;
         }
 
+        [Authorize(Roles = "管理员")]
         [HttpPost]
         public async Task<IActionResult> CreateClass([FromBody] ClassCreateRequest request)
         {
@@ -57,8 +59,28 @@ namespace StudentLeaveSystem.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllClasses()
         {
-            var classes = await _context.Classes.ToListAsync();
-            return Ok(classes);
+            var classes = await _context.Classes
+                .Include(c => c.TidNavigation)
+                .Include(c => c.DidNavigation)
+                .ToListAsync();
+
+            var result = classes.Select(c => new
+            {
+                cid = c.Cid,
+                cname = c.Cname,
+                grade = c.Grade,
+                did = c.Did,
+                tid = c.Tid,
+                studentCount = _context.Students.Count(s => s.Cid == c.Cid),
+                classTeacher = c.TidNavigation != null ? new
+                {
+                    tid = c.TidNavigation.Tid,
+                    tname = c.TidNavigation.Tname
+                } : null,
+                departmentName = c.DidNavigation?.Dname
+            });
+
+            return Ok(result);
         }
 
         [HttpGet("department/{departmentId}")]
@@ -66,6 +88,7 @@ namespace StudentLeaveSystem.Controllers
         {
             var classes = await _context.Classes
                 .Include(c => c.TidNavigation)
+                .Include(c => c.DidNavigation)
                 .Where(c => c.Did == departmentId)
                 .ToListAsync();
 
@@ -81,7 +104,8 @@ namespace StudentLeaveSystem.Controllers
                 {
                     tid = c.TidNavigation.Tid,
                     tname = c.TidNavigation.Tname
-                } : null
+                } : null,
+                departmentName = c.DidNavigation?.Dname
             });
 
             return Ok(result);

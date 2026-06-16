@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,33 +18,91 @@ namespace StudentLeaveSystem.Controllers
             _context = context;
         }
 
+        [Authorize(Roles = "student")]
         [HttpPost]
         public async Task<IActionResult> SubmitLeave([FromBody] LeaveApplicationRequest request)
         {
+            Console.WriteLine("[DEBUG] 接收到请假申请: sid={0}, leaveType={1}, startTime={2}, endTime={3}, reason={4}", 
+                request.sid, request.leaveType, request.startTime, request.endTime, request.reason);
+            
+            // 解析日期时间
+            if (!DateTime.TryParse(request.startTime, out DateTime startTime))
+            {
+                Console.WriteLine("[DEBUG] 开始时间解析失败: {0}", request.startTime);
+                return BadRequest(new { message = "开始时间格式不正确", code = "INVALID_START_TIME" });
+            }
+            
+            if (!DateTime.TryParse(request.endTime, out DateTime endTime))
+            {
+                Console.WriteLine("[DEBUG] 结束时间解析失败: {0}", request.endTime);
+                return BadRequest(new { message = "结束时间格式不正确", code = "INVALID_END_TIME" });
+            }
+            
+            // 验证时间顺序
+            if (endTime <= startTime)
+            {
+                return BadRequest(new { message = "结束时间必须晚于开始时间", code = "INVALID_TIME_ORDER" });
+            }
+            
             var student = await _context.Students.FindAsync(request.sid);
+            if (student != null)
+            {
+                Console.WriteLine("[DEBUG] 查询学生结果: 找到学生: {0}, 班级: {1}", student.Sname, student.Cid);
+            }
+            else
+            {
+                Console.WriteLine("[DEBUG] 查询学生结果: 学生不存在");
+            }
+            
             if (student == null)
             {
-                return BadRequest("学生不存在");
+                return BadRequest(new { message = "学生不存在", code = "STUDENT_NOT_FOUND" });
             }
 
             var @class = await _context.Classes.FindAsync(student.Cid);
+            if (@class != null)
+            {
+                Console.WriteLine("[DEBUG] 查询班级结果: 找到班级: {0}, 班导师: {1}", @class.Cname, @class.Tid);
+            }
+            else
+            {
+                Console.WriteLine("[DEBUG] 查询班级结果: 班级不存在");
+            }
+            
             if (@class == null)
             {
-                return BadRequest("班级不存在");
+                return BadRequest(new { message = "学生所在班级不存在", code = "CLASS_NOT_FOUND", studentCid = student.Cid });
             }
 
             if (@class.Tid == null)
             {
-                return BadRequest("班级未分配班导师");
+                return BadRequest(new { message = "班级未分配班导师，无法提交请假申请", code = "NO_MENTOR", classId = @class.Cid, className = @class.Cname });
             }
 
+            // 生成标准格式的请假单编号：LV + yyyyMMdd + 3位流水号
+            string leaveId;
+            if (!string.IsNullOrEmpty(request.leaveId))
+            {
+                leaveId = request.leaveId;
+            }
+            else
+            {
+                string dateStr = DateTime.Now.ToString("yyyyMMdd");
+                // 查询当天已有的请假单数量
+                int todayCount = await _context.LeaveApplications
+                    .CountAsync(l => l.LeaveId.StartsWith("LV" + dateStr));
+                // 生成3位流水号
+                string sequence = (todayCount + 1).ToString("D3");
+                leaveId = $"LV{dateStr}{sequence}";
+            }
+            
             var application = new LeaveApplication
             {
-                LeaveId = request.leaveId ?? Guid.NewGuid().ToString("N").Substring(0, 12),
+                LeaveId = leaveId,
                 Sid = request.sid,
                 LeaveType = request.leaveType,
-                StartTime = request.startTime,
-                EndTime = request.endTime,
+                StartTime = startTime,
+                EndTime = endTime,
                 Reason = request.reason,
                 SubmitTime = DateTime.Now,
                 FirstTid = @class.Tid,
@@ -62,8 +121,8 @@ namespace StudentLeaveSystem.Controllers
             public string? leaveId { get; set; }
             public string sid { get; set; } = string.Empty;
             public string leaveType { get; set; } = string.Empty;
-            public DateTime startTime { get; set; }
-            public DateTime endTime { get; set; }
+            public string startTime { get; set; } = string.Empty;
+            public string endTime { get; set; } = string.Empty;
             public string reason { get; set; } = string.Empty;
         }
 
@@ -112,6 +171,7 @@ namespace StudentLeaveSystem.Controllers
             return Ok(application);
         }
 
+        [Authorize(Roles = "student")]
         [HttpDelete("delete/{leaveId}")]
         public async Task<IActionResult> DeleteLeave(string leaveId)
         {
@@ -129,6 +189,58 @@ namespace StudentLeaveSystem.Controllers
             _context.LeaveApplications.Remove(application);
             await _context.SaveChangesAsync();
             return NoContent();
+        }
+
+        [HttpGet("{leaveId}")]
+        public async Task<IActionResult> GetLeaveDetail(string leaveId)
+        {
+            var leave = await _context.LeaveApplications
+                .Include(l => l.SidNavigation)
+                .Include(l => l.SidNavigation.CidNavigation)
+                .Include(l => l.SidNavigation.CidNavigation.DidNavigation)
+                .Include(l => l.FirstT)
+                .Include(l => l.SecondT)
+                .FirstOrDefaultAsync(l => l.LeaveId == leaveId);
+
+            if (leave == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(new
+            {
+                leaveId = leave.LeaveId,
+                leaveType = leave.LeaveType,
+                startTime = leave.StartTime,
+                endTime = leave.EndTime,
+                reason = leave.Reason,
+                submitTime = leave.SubmitTime,
+                leaveDays = (int)Math.Ceiling((leave.EndTime - leave.StartTime).TotalDays + 1),
+                firstResult = leave.FirstResult,
+                firstComment = leave.FirstComment,
+                firstApprovalTime = leave.FirstApprovalTime,
+                secondResult = leave.SecondResult,
+                secondComment = leave.SecondComment,
+                secondApprovalTime = leave.SecondApprovalTime,
+                student = leave.SidNavigation != null ? new
+                {
+                    sid = leave.SidNavigation.Sid,
+                    sname = leave.SidNavigation.Sname,
+                    className = leave.SidNavigation.CidNavigation?.Cname ?? "未知班级",
+                    departmentName = leave.SidNavigation.CidNavigation?.DidNavigation?.Dname ?? "未知院系",
+                    cid = leave.SidNavigation.Cid
+                } : null,
+                firstApprover = leave.FirstT != null ? new
+                {
+                    tid = leave.FirstT.Tid,
+                    tname = leave.FirstT.Tname
+                } : null,
+                secondApprover = leave.SecondT != null ? new
+                {
+                    tid = leave.SecondT.Tid,
+                    tname = leave.SecondT.Tname
+                } : null
+            });
         }
 
         [HttpGet("can-submit/{studentId}")]
@@ -282,6 +394,7 @@ namespace StudentLeaveSystem.Controllers
             return Ok(new { total, approved, rejected, pending });
         }
 
+        [Authorize(Roles = "teacher")]
         [HttpPut("{leaveId}/first-approve")]
         public async Task<IActionResult> FirstApprove(string leaveId, [FromBody] ApprovalRequest request)
         {
@@ -517,10 +630,12 @@ namespace StudentLeaveSystem.Controllers
         }
 
         [HttpPut("{leaveId}/second-approve")]
-        public async Task<IActionResult> SecondApprove(string leaveId, [FromBody] dynamic request)
+        public async Task<IActionResult> SecondApprove(string leaveId, [FromBody] ApprovalRequest request)
         {
-            string comment = request.comment;
-            string teacherId = request.teacherId;
+            if (request == null)
+            {
+                return BadRequest("无效的请求数据");
+            }
 
             var application = await _context.LeaveApplications.FindAsync(leaveId);
             if (application == null)
@@ -528,17 +643,21 @@ namespace StudentLeaveSystem.Controllers
                 return NotFound();
             }
 
-            application.SecondResult = "已通过";
-            application.SecondComment = comment;
+            application.SecondResult = "已批准";
+            application.SecondComment = request.comment;
+            application.SecondApprovalTime = DateTime.Now;
             await _context.SaveChangesAsync();
             return Ok(application);
         }
 
+        [Authorize(Roles = "学工老师")]
         [HttpPut("{leaveId}/second-reject")]
-        public async Task<IActionResult> SecondReject(string leaveId, [FromBody] dynamic request)
+        public async Task<IActionResult> SecondReject(string leaveId, [FromBody] ApprovalRequest request)
         {
-            string comment = request.comment;
-            string teacherId = request.teacherId;
+            if (request == null)
+            {
+                return BadRequest("无效的请求数据");
+            }
 
             var application = await _context.LeaveApplications.FindAsync(leaveId);
             if (application == null)
@@ -547,7 +666,8 @@ namespace StudentLeaveSystem.Controllers
             }
 
             application.SecondResult = "已拒绝";
-            application.SecondComment = comment;
+            application.SecondComment = request.comment;
+            application.SecondApprovalTime = DateTime.Now;
             await _context.SaveChangesAsync();
             return Ok(application);
         }
@@ -590,6 +710,33 @@ namespace StudentLeaveSystem.Controllers
                 .ToListAsync();
 
             return Ok(stats);
+        }
+
+        [HttpGet("stats/month")]
+        public async Task<IActionResult> GetMonthlyStats()
+        {
+            var now = DateTime.Now;
+            var startOfMonth = new DateTime(now.Year, now.Month, 1);
+            var endOfMonth = startOfMonth.AddMonths(1).AddDays(-1);
+
+            var monthlyApplications = _context.LeaveApplications
+                .Where(l => l.SubmitTime >= startOfMonth && l.SubmitTime <= endOfMonth);
+
+            var pendingCount = await monthlyApplications
+                .CountAsync(l => l.FirstResult == "待审批" || l.SecondResult == "待审批");
+
+            var approvedCount = await monthlyApplications
+                .CountAsync(l => l.SecondResult == "已批准");
+
+            var rejectedCount = await monthlyApplications
+                .CountAsync(l => l.FirstResult == "已拒绝" || l.SecondResult == "已拒绝");
+
+            return Ok(new
+            {
+                pending = pendingCount,
+                approved = approvedCount,
+                rejected = rejectedCount
+            });
         }
 
         public class LeaveApplicationUpdate

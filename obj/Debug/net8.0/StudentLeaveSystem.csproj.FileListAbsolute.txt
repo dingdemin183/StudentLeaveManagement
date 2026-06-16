@@ -276,3 +276,12 @@ D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\obj\Debug\net8.0\refint
 D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\obj\Debug\net8.0\StudentLeaveSystem.pdb
 D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\obj\Debug\net8.0\StudentLeaveSystem.genruntimeconfig.cache
 D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\obj\Debug\net8.0\ref\StudentLeaveSystem.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\obj\Debug\net8.0\StudentLeaveSystem.sourcelink.json
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.IdentityModel.Abstractions.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.IdentityModel.JsonWebTokens.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.IdentityModel.Logging.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.IdentityModel.Protocols.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.IdentityModel.Protocols.OpenIdConnect.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\Microsoft.IdentityModel.Tokens.dll
+D:\dotnet\code\all\StudentLeaveSystem\StudentLeaveSystem\bin\Debug\net8.0\System.IdentityModel.Tokens.Jwt.dll

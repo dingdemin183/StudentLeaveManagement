@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StudentLeaveSystem.Data;
 using StudentLeaveSystem.Models;
+using StudentLeaveSystem.Services;
 
 namespace StudentLeaveSystem.Controllers
 {
@@ -11,39 +12,42 @@ namespace StudentLeaveSystem.Controllers
     public class AuthenticationController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IJwtService _jwtService;
 
-        public AuthenticationController(AppDbContext context)
+        public AuthenticationController(AppDbContext context, IJwtService jwtService)
         {
             _context = context;
+            _jwtService = jwtService;
         }
 
         [HttpPost("students/login")]
         public async Task<IActionResult> StudentLogin([FromBody] LoginRequest request)
         {
             var student = await _context.Students
+                .Include(s => s.CidNavigation)
                 .FirstOrDefaultAsync(s => s.Sid == request.Sid);
 
-            // 原加密验证（数据库密码加密时使用）
-            // if (student == null || !BCrypt.Net.BCrypt.Verify(request.Password, student.Spassword))
-            // {
-            //     return Unauthorized(new { message = "学号或密码错误" });
-            // }
-
-            // 临时明文验证（数据库密码未加密时使用）
-            if (student == null || student.Spassword != request.Password)
+            if (student == null || !BCrypt.Net.BCrypt.Verify(request.Password, student.Spassword))
             {
                 return Unauthorized(new { message = "学号或密码错误" });
             }
 
-            HttpContext.Session.SetString("UserId", student.Sid);
-            HttpContext.Session.SetString("Role", "student");
+            // 生成 JWT Token
+            var token = _jwtService.GenerateToken(student.Sid, "student", student.Sname);
 
             return Ok(new
             {
-                sid = student.Sid,
-                sname = student.Sname,
-                role = "student",
-                classId = student.Cid
+                token,
+                user = new
+                {
+                    sid = student.Sid,
+                    sname = student.Sname,
+                    gender = student.Gender,
+                    sphone = student.Sphone,
+                    role = "student",
+                    classId = student.Cid,
+                    className = student.CidNavigation?.Cname
+                }
             });
         }
 
@@ -54,31 +58,28 @@ namespace StudentLeaveSystem.Controllers
                 .Include(t => t.DidNavigation)
                 .FirstOrDefaultAsync(t => t.Tid == request.Tid);
 
-            // 原加密验证（数据库密码加密时使用）
-            // if (teacher == null || !BCrypt.Net.BCrypt.Verify(password, teacher.Tpassword))
-            // {
-            //     return Unauthorized(new { message = "工号或密码错误" });
-            // }
-
-            // 临时明文验证（数据库密码未加密时使用）
-            if (teacher == null || teacher.Tpassword != request.Password)
+            if (teacher == null || !BCrypt.Net.BCrypt.Verify(request.Password, teacher.Tpassword))
             {
                 return Unauthorized(new { message = "工号或密码错误" });
             }
 
-            HttpContext.Session.SetString("UserId", teacher.Tid);
-            HttpContext.Session.SetString("Role", teacher.Position);
+            // 生成 JWT Token
+            var token = _jwtService.GenerateToken(teacher.Tid, teacher.Position, teacher.Tname);
 
             return Ok(new
             {
-                tid = teacher.Tid,
-                tname = teacher.Tname,
-                role = teacher.Position,
-                department = teacher.DidNavigation != null ? new
+                token,
+                user = new
                 {
-                    did = teacher.DidNavigation.Did,
-                    dname = teacher.DidNavigation.Dname
-                } : null
+                    tid = teacher.Tid,
+                    tname = teacher.Tname,
+                    role = teacher.Position,
+                    department = teacher.DidNavigation != null ? new
+                    {
+                        did = teacher.DidNavigation.Did,
+                        dname = teacher.DidNavigation.Dname
+                    } : null
+                }
             });
         }
 
@@ -89,38 +90,35 @@ namespace StudentLeaveSystem.Controllers
                 .Include(t => t.DidNavigation)
                 .FirstOrDefaultAsync(t => t.Tid == request.Tid && t.Position == "管理员");
 
-            // 原加密验证（数据库密码加密时使用）
-            // if (admin == null || !BCrypt.Net.BCrypt.Verify(password, admin.Tpassword))
-            // {
-            //     return Unauthorized(new { message = "账号或密码错误，或非管理员权限" });
-            // }
-
-            // 临时明文验证（数据库密码未加密时使用）
-            if (admin == null || admin.Tpassword != request.Password)
+            if (admin == null || !BCrypt.Net.BCrypt.Verify(request.Password, admin.Tpassword))
             {
                 return Unauthorized(new { message = "账号或密码错误，或非管理员权限" });
             }
 
-            HttpContext.Session.SetString("UserId", admin.Tid);
-            HttpContext.Session.SetString("Role", "管理员");
+            // 生成 JWT Token
+            var token = _jwtService.GenerateToken(admin.Tid, "管理员", admin.Tname);
 
             return Ok(new
             {
-                tid = admin.Tid,
-                tname = admin.Tname,
-                role = "管理员",
-                department = admin.DidNavigation != null ? new
+                token,
+                user = new
                 {
-                    did = admin.DidNavigation.Did,
-                    dname = admin.DidNavigation.Dname
-                } : null
+                    tid = admin.Tid,
+                    tname = admin.Tname,
+                    role = "管理员",
+                    department = admin.DidNavigation != null ? new
+                    {
+                        did = admin.DidNavigation.Did,
+                        dname = admin.DidNavigation.Dname
+                    } : null
+                }
             });
         }
 
         [HttpPost("logout")]
         public IActionResult Logout()
         {
-            HttpContext.Session.Clear();
+            // JWT 无需服务端注销，客户端删除 Token 即可
             return Ok(new { message = "退出成功" });
         }
 

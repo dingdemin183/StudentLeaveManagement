@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ namespace StudentLeaveSystem.Controllers
             _context = context;
         }
 
+        [Authorize(Roles = "管理员")]
         [HttpPost]
         public async Task<IActionResult> CreateStudent([FromBody] StudentCreateRequest request)
         {
@@ -103,6 +105,7 @@ namespace StudentLeaveSystem.Controllers
         public async Task<IActionResult> GetStudentsByClass(string classId)
         {
             var students = await _context.Students
+                .Include(s => s.CidNavigation)
                 .Where(s => s.Cid == classId)
                 .ToListAsync();
 
@@ -113,7 +116,14 @@ namespace StudentLeaveSystem.Controllers
                 gender = s.Gender,
                 sphone = s.Sphone,
                 spassword = s.Spassword,
-                cid = s.Cid
+                cid = s.Cid,
+                className = s.CidNavigation?.Cname ?? string.Empty,
+                studentClass = s.CidNavigation != null ? new
+                {
+                    cid = s.CidNavigation.Cid,
+                    cname = s.CidNavigation.Cname,
+                    grade = s.CidNavigation.Grade
+                } : null
             });
 
             return Ok(result);
@@ -126,7 +136,64 @@ namespace StudentLeaveSystem.Controllers
                 .Include(s => s.CidNavigation)
                 .Where(s => s.CidNavigation.Did == departmentId)
                 .ToListAsync();
-            return Ok(students);
+
+            var result = students.Select(s => new
+            {
+                sid = s.Sid,
+                sname = s.Sname,
+                gender = s.Gender,
+                sphone = s.Sphone,
+                spassword = s.Spassword,
+                cid = s.Cid,
+                className = s.CidNavigation?.Cname ?? string.Empty,
+                studentClass = s.CidNavigation != null ? new
+                {
+                    cid = s.CidNavigation.Cid,
+                    cname = s.CidNavigation.Cname,
+                    grade = s.CidNavigation.Grade
+                } : null
+            });
+
+            return Ok(result);
+        }
+
+        [HttpGet("department/{departmentId}/search")]
+        public async Task<IActionResult> SearchStudentsByDepartment(string departmentId, [FromQuery] string? keyword)
+        {
+            var query = _context.Students
+                .Include(s => s.CidNavigation)
+                .Where(s => s.CidNavigation.Did == departmentId);
+
+            if (!string.IsNullOrWhiteSpace(keyword))
+            {
+                keyword = keyword.Trim();
+                query = query.Where(s =>
+                    s.Sid.Contains(keyword) ||
+                    s.Sname.Contains(keyword) ||
+                    s.CidNavigation.Cname.Contains(keyword) ||
+                    s.Sphone.Contains(keyword));
+            }
+
+            var students = await query.OrderBy(s => s.Cid).ThenBy(s => s.Sid).ToListAsync();
+
+            var result = students.Select(s => new
+            {
+                sid = s.Sid,
+                sname = s.Sname,
+                gender = s.Gender,
+                sphone = s.Sphone,
+                spassword = s.Spassword,
+                cid = s.Cid,
+                className = s.CidNavigation?.Cname ?? string.Empty,
+                studentClass = s.CidNavigation != null ? new
+                {
+                    cid = s.CidNavigation.Cid,
+                    cname = s.CidNavigation.Cname,
+                    grade = s.CidNavigation.Grade
+                } : null
+            });
+
+            return Ok(result);
         }
 
         [HttpGet("profile/{sid}")]
@@ -149,6 +216,7 @@ namespace StudentLeaveSystem.Controllers
                 gender = student.Gender,
                 sphone = student.Sphone,
                 cid = student.Cid,
+                className = student.CidNavigation?.Cname ?? string.Empty,
                 studentClass = student.CidNavigation != null ? new
                 {
                     cid = student.CidNavigation.Cid,
@@ -172,17 +240,34 @@ namespace StudentLeaveSystem.Controllers
                 return NotFound();
             }
 
+            // 更新姓名
+            if (!string.IsNullOrEmpty(update.sname))
+            {
+                student.Sname = update.sname;
+            }
+            // 更新性别
+            if (!string.IsNullOrEmpty(update.gender))
+            {
+                student.Gender = update.gender;
+            }
+            // 更新电话
             if (!string.IsNullOrEmpty(update.sphone))
             {
                 student.Sphone = update.sphone;
             }
-            if (!string.IsNullOrEmpty(update.newPassword))
+            // 更新密码（需要验证旧密码）
+            if (!string.IsNullOrEmpty(update.newPassword) && !string.IsNullOrEmpty(update.oldPassword))
             {
+                // 验证旧密码
+                if (!BCrypt.Net.BCrypt.Verify(update.oldPassword, student.Spassword))
+                {
+                    return BadRequest(new { message = "旧密码不正确" });
+                }
                 student.Spassword = BCrypt.Net.BCrypt.HashPassword(update.newPassword);
             }
 
             await _context.SaveChangesAsync();
-            return Ok(student);
+            return Ok(new { message = "批量删除成功" });
         }
 
         [HttpPut("{sid}")]
@@ -255,9 +340,31 @@ namespace StudentLeaveSystem.Controllers
             return Ok(new { count = students.Count });
         }
 
+        [HttpGet("department-stats")]
+        public async Task<IActionResult> GetDepartmentStats()
+        {
+            var stats = await _context.Students
+                .Include(s => s.CidNavigation)
+                .Include(s => s.CidNavigation.DidNavigation)
+                .Where(s => s.CidNavigation != null && s.CidNavigation.DidNavigation != null)
+                .GroupBy(s => new { s.CidNavigation.DidNavigation.Did, s.CidNavigation.DidNavigation.Dname })
+                .Select(g => new
+                {
+                    did = g.Key.Did,
+                    dname = g.Key.Dname,
+                    count = g.Count()
+                })
+                .ToListAsync();
+
+            return Ok(stats);
+        }
+
         public class StudentProfileUpdate
         {
+            public string? sname { get; set; }
+            public string? gender { get; set; }
             public string? sphone { get; set; }
+            public string? oldPassword { get; set; }
             public string? newPassword { get; set; }
         }
     }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ namespace StudentLeaveSystem.Controllers
             _context = context;
         }
 
+        [Authorize(Roles = "管理员")]
         [HttpPost]
         public async Task<IActionResult> CreateDepartment([FromBody] Department department)
         {
@@ -56,6 +58,7 @@ namespace StudentLeaveSystem.Controllers
             return Ok(department);
         }
 
+        [Authorize(Roles = "管理员")]
         [HttpDelete("{did}")]
         public async Task<IActionResult> DeleteDepartment(string did)
         {
